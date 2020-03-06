@@ -51,7 +51,8 @@ import {
   UpdateAction,
   UpdateActions,
   PredicateFn,
-  BoundingBox
+  BoundingBox,
+  DragToSelectConfig
 } from './models';
 
 import { AUDIT_TIME, NO_SELECT_CLASS } from './constants';
@@ -67,6 +68,7 @@ import {
   hasMinimumSize
 } from './utils';
 import { KeyboardEventsService } from './keyboard-events.service';
+import { CONFIG } from './tokens';
 
 @Component({
   selector: 'dts-select-container',
@@ -96,7 +98,12 @@ export class SelectContainerComponent implements AfterViewInit, OnDestroy, After
   @ContentChildren(SelectItemDirective, { descendants: true })
   private $selectableItems: QueryList<SelectItemDirective>;
 
-  @Input() selectedItems: any;
+  @Input('selectedItems') set selectedItems(selectedItems) {
+    if (this.config.selectedItemsTwoWayDataBinding) {
+      this.selectItems(item => selectedItems.indexOf(item) >= 0);
+      this.deselectItems(item => selectedItems.indexOf(item) < 0);
+    }
+  }
   @Input() selectOnDrag = true;
   @Input() disabled = false;
   @Input() disableDrag = false;
@@ -128,6 +135,7 @@ export class SelectContainerComponent implements AfterViewInit, OnDestroy, After
   private _lastRangeSelection: Map<SelectItemDirective, boolean> = new Map();
 
   constructor(
+    @Inject(CONFIG) private config: DragToSelectConfig,
     @Inject(PLATFORM_ID) private platformId: Object,
     private shortcuts: ShortcutService,
     private keyboardEvents: KeyboardEventsService,
@@ -304,29 +312,21 @@ export class SelectContainerComponent implements AfterViewInit, OnDestroy, After
   }
 
   private _initSelectedItemsChange() {
-    this._selectedItems$
-      .pipe(
-        auditTime(AUDIT_TIME),
-        takeUntil(this.destroy$)
-      )
-      .subscribe({
-        next: selectedItems => {
-          this.selectedItemsChange.emit(selectedItems);
-          this.select.emit(selectedItems);
-        },
-        complete: () => {
-          this.selectedItemsChange.emit([]);
-        }
-      });
+    this._selectedItems$.pipe(auditTime(AUDIT_TIME), takeUntil(this.destroy$)).subscribe({
+      next: selectedItems => {
+        this.selectedItemsChange.emit(selectedItems);
+        this.select.emit(selectedItems);
+      },
+      complete: () => {
+        this.selectedItemsChange.emit([]);
+      }
+    });
   }
 
   private _observeSelectableItems() {
     // Listen for updates and either select or deselect an item
     this.updateItems$
-      .pipe(
-        withLatestFrom(this._selectedItems$),
-        takeUntil(this.destroy$)
-      )
+      .pipe(withLatestFrom(this._selectedItems$), takeUntil(this.destroy$))
       .subscribe(([update, selectedItems]: [UpdateAction, any[]]) => {
         const item = update.item;
 
@@ -346,11 +346,7 @@ export class SelectContainerComponent implements AfterViewInit, OnDestroy, After
 
     // Update the container as well as all selectable items if the list has changed
     this.$selectableItems.changes
-      .pipe(
-        withLatestFrom(this._selectedItems$),
-        observeOn(asyncScheduler),
-        takeUntil(this.destroy$)
-      )
+      .pipe(withLatestFrom(this._selectedItems$), observeOn(asyncScheduler), takeUntil(this.destroy$))
       .subscribe(([items, selectedItems]: [QueryList<SelectItemDirective>, any[]]) => {
         const newList = items.toArray();
         this._selectableItems = newList;
@@ -371,11 +367,7 @@ export class SelectContainerComponent implements AfterViewInit, OnDestroy, After
       const containerScroll$ = fromEvent(this.host, 'scroll');
 
       merge(resize$, windowScroll$, containerScroll$)
-        .pipe(
-          startWith('INITIAL_UPDATE'),
-          auditTime(AUDIT_TIME),
-          takeUntil(this.destroy$)
-        )
+        .pipe(startWith('INITIAL_UPDATE'), auditTime(AUDIT_TIME), takeUntil(this.destroy$))
         .subscribe(() => {
           this.update();
         });

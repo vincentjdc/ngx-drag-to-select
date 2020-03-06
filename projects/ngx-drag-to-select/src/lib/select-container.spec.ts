@@ -1,9 +1,10 @@
-import { async, ComponentFixture, TestBed } from '@angular/core/testing';
+import { async, ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { Component, ViewChild, ViewChildren, QueryList } from '@angular/core';
 import { DragToSelectModule } from './drag-to-select.module';
 import { SelectContainerComponent } from './select-container.component';
 import { By } from '@angular/platform-browser';
 import { SelectItemDirective } from './select-item.directive';
+import { skip } from 'rxjs/operators';
 
 function triggerDomEvent(eventType: string, target: HTMLElement | Element, eventData: object = {}): void {
   const event: Event = document.createEvent('Event');
@@ -33,6 +34,33 @@ interface SelectItemValue {
 class TestComponent {
   @ViewChild('selectContainer', { static: true })
   selectContainer: SelectContainerComponent;
+
+  @ViewChildren('selectItem')
+  selectItems: QueryList<SelectItemDirective>;
+
+  selectedItems = [];
+
+  itemSelected(value: any) {}
+  itemDeselected(value: any) {}
+}
+
+@Component({
+  template: `
+    <dts-select-container
+      [(selectedItems)]="selectedItems"
+      (itemSelected)="itemSelected($event)"
+      (itemDeselected)="itemDeselected($event)"
+      #selectContainer
+    >
+      <span [dtsSelectItem]="item" #selectItem="dtsSelectItem" *ngFor="let item of items">Item #{{ item.id }}</span>
+    </dts-select-container>
+  `
+})
+class TestDynamicItemsComponent {
+  @ViewChild('selectContainer', { static: true })
+  selectContainer: SelectContainerComponent;
+
+  items = [{ id: 1 }, { id: 2 }, { id: 3 }];
 
   @ViewChildren('selectItem')
   selectItems: QueryList<SelectItemDirective>;
@@ -207,4 +235,57 @@ describe('SelectContainerComponent', () => {
       expect(testComponent.itemDeselected).toHaveBeenCalledWith({ id: 2 });
     });
   });
+});
+
+describe('TwoWayDataBinding', () => {
+  let fixture: ComponentFixture<TestDynamicItemsComponent>;
+  let testComponent: TestDynamicItemsComponent;
+  let selectContainerInstance: SelectContainerComponent;
+
+  beforeEach(async(() => {
+    TestBed.configureTestingModule({
+      declarations: [TestDynamicItemsComponent],
+      imports: [
+        DragToSelectModule.forRoot({
+          selectedItemsTwoWayDataBinding: true
+        })
+      ]
+    }).compileComponents();
+  }));
+
+  beforeEach(() => {
+    window.getSelection = jest.fn().mockReturnValue({});
+    fixture = TestBed.createComponent(TestDynamicItemsComponent);
+    testComponent = fixture.componentInstance;
+    selectContainerInstance = fixture.componentInstance.selectContainer;
+    fixture.detectChanges();
+  });
+
+  it('should select items', done => {
+    const result = testComponent.items.slice(1, 1);
+
+    selectContainerInstance.select.subscribe(items => {
+      expect(testComponent.selectedItems.length).toBe(result.length);
+      expect(items).toEqual(result);
+      expect(testComponent.selectedItems).toEqual(result);
+      done();
+    });
+
+    selectContainerInstance.selectedItems = result;
+  });
+
+  it('should select items if selectedItems changes', fakeAsync(done => {
+    const result = testComponent.items.slice(1, 2);
+
+    selectContainerInstance.select.pipe(skip(1)).subscribe(items => {
+      expect(testComponent.selectedItems.length).toBe(result.length);
+      expect(items).toEqual(result);
+      expect(testComponent.selectedItems).toEqual(result);
+      done();
+    });
+
+    selectContainerInstance.selectedItems = testComponent.items.slice(1, 1);
+    tick();
+    selectContainerInstance.selectedItems = result;
+  }));
 });

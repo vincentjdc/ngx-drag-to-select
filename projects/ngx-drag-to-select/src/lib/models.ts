@@ -33,6 +33,7 @@ export interface Shortcuts {
 export interface DragToSelectConfig {
   selectedClass: string;
   shortcuts: Partial<Shortcuts>;
+  selectedItemsTwoWayDataBinding?: boolean;
 }
 
 export interface MousePosition {
